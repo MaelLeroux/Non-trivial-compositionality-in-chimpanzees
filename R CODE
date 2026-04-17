@@ -1,0 +1,175 @@
+#######################################################################
+###                                                                 ###
+###            NON TRIVIAL COMPOSITIONALITY IN CHIMPS               ###    
+###                                                                 ###
+#######################################################################
+# Custom function for calculating hazard ratio from a survival model
+
+library(rstan)
+library(brms)
+library(parmsurvfit)
+library(survival)
+library(survminer)
+library(dplyr)
+library(tidyverse)
+library(cmdstanr)
+library(rstanarm)
+library(tidybayes)
+library(splines2)
+
+hazard <- function(model, x){ 
+  model %>% 
+    tidy_draws() %>%
+    mutate(`hazard ratio` = exp({{x}})) %>% 
+    summarise(median = median(`hazard ratio`), sd = sd(`hazard ratio`),
+              lower     = quantile(`hazard ratio`, probs = .055),
+              upper     = quantile(`hazard ratio`, probs = .945)) %>% 
+    mutate_all(round, digits = 4)} 
+
+#-------------------------------------------------
+# 1) Upload/explore data
+#-------------------------------------------------
+
+setwd("~/Documents/M2/Expe/Scripts_pour_R/Exp")
+dat <- read.table("Stat.txt", header = TRUE)
+head(dat)
+str(dat)
+dat$cdt <- factor(dat$cdt,levels=c("One","Two"))  
+dat$cdt.num <- as.numeric(dat$cdt)
+dat$ID <- as.factor(dat$ID)
+dat$Order <- as.factor(dat$Order)
+dat$Order_ID <- as.factor(dat$Order_ID)
+dat$force <- as.numeric(dat$force)
+dat$Prop_react_z <- scale(dat$Prop_react)
+
+# reorder
+dat <- dat[order(dat$ID,partial=dat$cdt),]
+
+# Add a new column to the dataset, "Response". 
+# This is a binary (1/0) indicator of whether an individual produced the behavioural response. 
+#So any rows where Duration = 0, or Latency = Maximum, will be labelled with a 0. This tells the model that these rows are to be 'censored'.
+
+library(dplyr)
+
+dat <- dat %>%
+  mutate(Response = ifelse(duration_look_speak == 0 | latency_first_look == max(latency_first_look), 0, 1))
+
+# Model - Duration look
+
+m1 <- brm(duration_look_speak | cens(1 - Response) ~ 1 + cdt + Prop_react_z + (1|Order) + (1|ID) + (1|Spot),
+                      data = dat,
+                      family = brmsfamily("cox"),
+                      prior= prior(normal(0,1)),  
+                      chains = 2, iter = 10000,
+                      save_pars = save_pars(all = TRUE))
+
+
+summary(m1) 
+hazard(m1, b_cdtTwo)
+plot(m1)
+post_m1<- posterior_samples(m1)
+sum(post_m1$b_cdtTwo<0)/nrow(post_m1) ## PP<0 (probability that the effect is negative: confidence in the model’s results)
+
+# Mean = The relative difference between levels of the predictor in the rate of extinction of the outcome measure.
+# e.g. if the outcome is Duration Of Looking, a ratio of 1.5 means that one condition took 1.5x as long to stop looking relative to the other condition.
+# for latency, the thing being measured is the time until the START of a behaviour, so here it would be 1.5x as long until they begin looking.
+
+# upper and lower bounds indicate robustness of the effect. If the bounds include 1.0 this would suggest a non-robust (i.e. non-sig) effect.
+
+# Fit the Kaplan-Meier estimator
+km_fit_grouped <- survfit(Surv(duration_look_speak, Response) ~ cdt, data = dat)
+
+ggsurvplot(km_fit_grouped, 
+           data = dat, 
+           risk.table = TRUE, 
+           conf.int = TRUE,
+           ggtheme = theme_minimal(), 
+           legend.title = "Condition")
+
+# Model - Latency to first look
+m2   <- brm(latency_first_look | cens(1 - Response) ~ 1 + cdt + Prop_react_z + (1|Order) + (1|ID) + (1|Spot),
+            data = dat,
+            family = brmsfamily("cox"),
+            chains = 2, iter = 10000,
+            save_pars = save_pars(all = TRUE))
+
+
+summary(m2) 
+hazard(m2, b_cdtTwo)
+plot(m2)
+post_m2<- posterior_samples(m2)
+sum(post_m2$b_cdtTwo<0)/nrow(post_m2)
+
+# Fit the Kaplan-Meier estimator
+km_fit_grouped <- survfit(Surv(latency_first_look, Response) ~ cdt, data = dat)
+
+ggsurvplot(km_fit_grouped, 
+           data = dat, 
+           risk.table = TRUE, 
+           conf.int = TRUE,
+           ggtheme = theme_minimal(), 
+           legend.title = "Condition")
+
+
+# Model - Number of looks
+
+## choose the family
+mean(dat$nb_look)
+var(dat$nb_look)
+
+hist(dat$nb_look)
+
+#variance>mean => overdispersed. 
+#Just two 0 in my data = represent 17% of my data so a negative binomial model (for count with over-dispersion) should be enough.
+
+#fit and inspect the model
+
+#No priors
+m3a<-brm(nb_look ~ cdt + Prop_react + (1|Order) + (1|ID) + (1|Spot), 
+        data = dat, 
+        family = negbinomial())
+summary(m3a) #Very high Rhat
+
+## Diagonostic
+#Check if the model converged well
+plot(m3a) #did not converge well
+
+#Model fit?
+plot(conditional_effects(m3a),points=T)
+pp_check(m3a) #not a good fit
+
+#Priors
+get_prior(nb_look ~ cdt + Prop_react + (1|Order) + (1|ID) + (1|Spot),
+          data = dat,
+          family = negbinomial()) #Flat priors
+
+priors <- c(
+  set_prior("normal(1, 1)", class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("student_t(3, 0, 2.5)", class = "sd"),
+  set_prior("gamma(2, 0.1)", class = "shape")
+)
+
+m3 <- brm(
+  nb_look ~ cdt + Prop_react_z + (1|Order) + (1|ID) + (1|Spot), 
+  data = dat,
+  family = negbinomial(),
+  prior = priors,
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  warmup = 1000,
+  control = list(adapt_delta = 0.99, max_treedepth = 15)
+)
+
+summary(m3) #Good Rhat 
+
+plot(m3)
+conditional_effects(m3)
+plot(conditional_effects(m3),points=T)
+pp_check(m3)
+post_m3<- posterior_samples(m3)
+sum(post_m3$b_cdtTwo<0)/nrow(post_m3)
+
+
+
