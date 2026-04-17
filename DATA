@@ -1,0 +1,13 @@
+Order	ID	cdt	Spot	duration_look_speak	nb_look	latency_first_look	Duration_First_Look	move_speak	turn_speak	Latency_turn_speak	Order_ID	Num_present	Num_react	Prop_react	force
+1	Go	Two	B	0	0	120	0	No	No	120	1	6	4	0.666666666666667	1
+2	Pa	One	A	24.08	3	0.48	6.4	Yes	Yes	27.32	1	8	5	0.625	2
+3	Je	One	B	49.996	8	0.68	5.439	No	Yes	1.92	1	8	6	0.75	3
+4	Pa	Two	A	26.08	6	2.24	11.2	No	No	120	2	5	4	0.8	2
+5	In	Two	A	47.716	6	1.08	2.799	Yes	Yes	0.56	1	8	7	0.875	4
+6	Pe	Two	B	0	0	120	0	No	No	120	1	8	6	0.75	1
+7	In	One	B	5.92	2	0.28	3.6	No	Yes	0.8	2	9	5	0.555555555555556	2
+8	An	Two	A	49.118	12	1.04	4.759	Yes	Yes	13.2	1	4	2	0.5	3
+9	Je	Two	A	10.92	7	1.08	0.72	No	No	120	2	9	2	0.222222222222222	2
+10	An	One	B	50.877	10	0.28	9.839	Yes	Yes	0.8	2	10	10	1	4
+11	Pe	One	B	34.8	7	1.88	3.12	No	Yes	2	2	8	8	1	2
+12	Go	One	A	15.4	9	4.92	0.92	No	Yes	2.96	2	2	2	1	3
